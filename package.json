@@ -1,0 +1,22 @@
+{
+  "name": "type-abi",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "compile": "npx solcjs ./tests/contracts/ForTyping.sol --abi -o ./.abi"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/lodash": "^4.14.197",
+    "@types/node": "^20.5.0",
+    "solc": "^0.8.21",
+    "typescript": "^5.1.6"
+  },
+  "dependencies": {
+    "lodash": "^4.17.21",
+    "prettier": "^3.0.1"
+  }
+}
