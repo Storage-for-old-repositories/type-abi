@@ -1,4 +1,4 @@
-import { MultiStringBuilder } from "utility/string/string-builder";
+import { StringBuilder } from "utility/string/string-builder";
 import {
   ArrayConstToken,
   ArrayToken,
@@ -56,7 +56,7 @@ const TOKEN_GENERATORS = {
     yield token.token;
     yield `>, ${token.sizeof}][0]`;
   },
-  struct: function* (token: StructToken) {
+  struct: function* (token: StructToken): Generator<string | Tokens> {
     yield "[{";
 
     for (let i = 0; i < token.fields.length; ++i) {
@@ -70,17 +70,18 @@ const TOKEN_GENERATORS = {
 
     yield `}, "${token.structName}"][0]`;
   },
-  tuple: function* (token: TupleToken) {
+  tuple: function* (token: TupleToken): Generator<string | Tokens> {
     yield "[";
 
-    for (const field of token.tokens) {
-      yield field;
+    yield token.tokens[0]!;
+    for (let i = 1; i < token.tokens.length; ++i) {
       yield ",";
+      yield token.tokens[i]!;
     }
 
     yield `]`;
   },
-  tupleStructMode: function* (token: TupleToken) {
+  tupleStructMode: function* (token: TupleToken): Generator<string | Tokens> {
     yield* TOKEN_GENERATORS.struct({
       kind: "struct",
       structName: "<AutoTuple>",
@@ -89,31 +90,47 @@ const TOKEN_GENERATORS = {
       name: token.name,
     });
   },
-};
+  argument: function* (token: Tokens) {
+    if (token.kind === "tuple") {
+      const firstToken = token.tokens[0]!;
+      const name = firstToken.name ?? `auto$field0`;
+      yield `${name}: `;
+      yield firstToken;
 
-// ? { [k in Key as EndofTokens["kind"]]: 2 }
-// : never;
+      for (let i = 1; i < token.tokens.length; ++i) {
+        const field = token.tokens[i]!;
+        const name = field.name ?? `auto$field${i}`;
+
+        yield ",";
+        yield `${name}: `;
+        yield field;
+      }
+    }
+    const name = token.name ?? "auto$field";
+    yield `${name}: `;
+    yield token;
+  },
+  result: function* (token: Tokens) {
+    yield token;
+  },
+};
 
 const DEFAULT_CONFIG: Readonly<TsTypeGenerationConfig> = {
   verbose: false,
-  // tupleToStructIfAllHasName,
 };
 
 export interface TsTypeGenerationConfig {
   verbose: boolean;
-  // tupleIs;
 }
-
-interface TsTypeGeneratorIterConfig {}
 
 class TsTypeGenerator {
   private artifact!: ParsedFuncArtifact;
   private config!: TsTypeGenerationConfig;
 
-  // private iterConfig!: TsTypeGeneratorIterConfig;
-  // private iterConfigStack: TsTypeGeneratorIterConfig[] = [];
+  private generator!: Generator<string | Tokens>;
+  private generators: Generator<string | Tokens>[] = [];
 
-  private multiBuilder = new MultiStringBuilder();
+  private sBuilder = new StringBuilder();
 
   public setArtifact(artifact: ParsedFuncArtifact) {
     this.artifact = artifact;
@@ -121,8 +138,7 @@ class TsTypeGenerator {
 
   public clearArtifact() {
     this.artifact = null!; /** memory control */
-    // this.iterConfigStack = [];
-    this.multiBuilder.clearBuilders();
+    this.sBuilder = new StringBuilder();
   }
 
   public setConfig(config?: Partial<TsTypeGenerationConfig>) {
@@ -136,24 +152,58 @@ class TsTypeGenerator {
     }
   }
 
-  public generate() {
-    this.multiBuilder.clearBuilders();
-    // this.iterConfigStack = [];
+  public generate() {}
+
+  private generateInputs(token: Tokens) {
+    this.generator = TOKEN_GENERATORS.argument(token);
+    this.loopGenerate();
   }
 
-  private tokenToGenerator(token: Tokens) {
-    this.multiBuilder.pushBuilder();
+  private generateOutputs(token: Tokens) {
+    this.generator = TOKEN_GENERATORS.result(token);
+    this.loopGenerate();
+  }
 
-    switch (token.kind) {
-      case "tuple":
-        break;
+  private loopGenerate() {
+    while (this.generators.length > 0) {
+      const generator = this.generators[this.generators.length - 1]!;
+      const genResult = generator.next();
+
+      if (genResult.done) {
+        this.popGenerator();
+        continue;
+      }
+
+      const { value } = genResult;
+
+      if (typeof value == "string") {
+        this.sBuilder.push(value);
+        continue;
+      }
+
+      if (value.kind === "tuple") {
+        this.pushGenerator(TOKEN_GENERATORS.tuple(value));
+      } else if (value.kind === "array") {
+        this.pushGenerator(TOKEN_GENERATORS.array(value));
+      } else if (value.kind === "arrayConst") {
+        this.pushGenerator(TOKEN_GENERATORS.arrayConst(value));
+      } else if (value.kind === "struct") {
+        this.pushGenerator(TOKEN_GENERATORS.struct(value));
+      } else {
+        this.pushGenerator(TOKEN_GENERATORS.alias(value));
+      }
     }
   }
 
-  // private pushConfig() {
-  //   // this.iterConfigStack.push(this.iterConfig);
-  //   // this.iterConfig =
-  // }
+  private pushGenerator(generator: Generator<string | Tokens>) {
+    this.generators.push(this.generator);
+    this.generator = generator;
+  }
+
+  private popGenerator() {
+    this.generator = this.generators.pop()!;
+    return this.generator;
+  }
 }
 
 type k = Exclude<TokensKinds, EndofTokens["kind"]>;
