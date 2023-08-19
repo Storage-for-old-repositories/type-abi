@@ -24,6 +24,10 @@ export class AbiParserFunc {
     this.tokensProviders = [];
   }
 
+  public clearABI() {
+    this.abi = null! /** memory control */;
+  }
+
   public parse(): ParsedFuncArtifact {
     try {
       const { name, inputs, outputs, stateMutability } = this.abi;

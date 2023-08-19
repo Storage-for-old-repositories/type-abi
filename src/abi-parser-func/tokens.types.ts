@@ -149,3 +149,5 @@ export interface ArrayToken extends ParseToken {
   kind: "array";
   token: Tokens;
 }
+
+export type TokensKinds = Tokens["kind"];
