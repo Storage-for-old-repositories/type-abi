@@ -14,32 +14,32 @@ export class StringBuilder {
   }
 }
 
-export class MultiStringBuilder {
-  private _sBuilder = new StringBuilder();
-  private sBuildersStack: StringBuilder[] = [];
+// export class MultiStringBuilder {
+//   private _sBuilder = new StringBuilder();
+//   private sBuildersStack: StringBuilder[] = [];
 
-  get builder() {
-    return this._sBuilder;
-  }
+//   get builder() {
+//     return this._sBuilder;
+//   }
 
-  public pushBuilder() {
-    this.sBuildersStack.push(this._sBuilder);
-    this._sBuilder = new StringBuilder();
-  }
+//   public pushBuilder() {
+//     this.sBuildersStack.push(this._sBuilder);
+//     this._sBuilder = new StringBuilder();
+//   }
 
-  public popBuilder() {
-    this.validatePopBuilder();
-    this._sBuilder = this.sBuildersStack.pop()!;
-  }
+//   public popBuilder() {
+//     this.validatePopBuilder();
+//     this._sBuilder = this.sBuildersStack.pop()!;
+//   }
 
-  public clearBuilders() {
-    this._sBuilder = new StringBuilder();
-    this.sBuildersStack = [];
-  }
+//   public clearBuilders() {
+//     this._sBuilder = new StringBuilder();
+//     this.sBuildersStack = [];
+//   }
 
-  private validatePopBuilder() {
-    if (this.sBuildersStack.length === 0) {
-      throw new Error(`builders stack empty`);
-    }
-  }
-}
+//   private validatePopBuilder() {
+//     if (this.sBuildersStack.length === 0) {
+//       throw new Error(`builders stack empty`);
+//     }
+//   }
+// }

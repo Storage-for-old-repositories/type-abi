@@ -38,6 +38,7 @@ contract ForTyping {
     function array_uint256_2(
         User[2][2] memory users
     ) public view returns (uint256[2] memory) {
+        User memory u1 = users[0][0];
         return [number, number];
     }
 

@@ -1,4 +1,4 @@
-import { StringBuilder } from "utility/string/string-builder";
+import { StringBuilder } from "../utility/string/string-builder";
 import {
   ArrayConstToken,
   ArrayToken,
@@ -6,7 +6,6 @@ import {
   ParsedFuncArtifact,
   StructToken,
   Tokens,
-  TokensKinds,
   TupleToken,
 } from "../abi-parser-func";
 
@@ -42,6 +41,7 @@ const TOKEN_GENERATORS = {
     const alias = TYPE_ALIAS[token.kind]!;
     if (typeof alias === "string") {
       yield alias;
+      return;
     }
     const aliasCastType = alias as (t: typeof token) => string;
     yield aliasCastType(token);
@@ -91,6 +91,7 @@ const TOKEN_GENERATORS = {
     });
   },
   argument: function* (token: Tokens) {
+    yield "(";
     if (token.kind === "tuple") {
       const firstToken = token.tokens[0]!;
       const name = firstToken.name ?? `auto$field0`;
@@ -109,9 +110,12 @@ const TOKEN_GENERATORS = {
     const name = token.name ?? "auto$field";
     yield `${name}: `;
     yield token;
+    yield "):";
   },
   result: function* (token: Tokens) {
+    yield "Promise<";
     yield token;
+    yield ">";
   },
 };
 
@@ -123,11 +127,10 @@ export interface TsTypeGenerationConfig {
   verbose: boolean;
 }
 
-class TsTypeGenerator {
+export class TsTypeGenerator {
   private artifact!: ParsedFuncArtifact;
   private config!: TsTypeGenerationConfig;
 
-  private generator!: Generator<string | Tokens>;
   private generators: Generator<string | Tokens>[] = [];
 
   private sBuilder = new StringBuilder();
@@ -138,7 +141,12 @@ class TsTypeGenerator {
 
   public clearArtifact() {
     this.artifact = null!; /** memory control */
+    this.clearState();
+  }
+
+  private clearState() {
     this.sBuilder = new StringBuilder();
+    this.generators = [];
   }
 
   public setConfig(config?: Partial<TsTypeGenerationConfig>) {
@@ -152,15 +160,33 @@ class TsTypeGenerator {
     }
   }
 
-  public generate() {}
+  public generate() {
+    try {
+      const signature = this.generateSignature();
+      return signature;
+    } catch (error) {
+      this.clearState();
+      throw error;
+    }
+  }
+
+  private generateSignature() {
+    this.sBuilder.push(this.artifact.name!);
+    this.generateInputs(this.artifact.input.type!);
+    this.generateOutputs(this.artifact.output.type!);
+    const signature = this.sBuilder.join("");
+    return signature;
+  }
 
   private generateInputs(token: Tokens) {
-    this.generator = TOKEN_GENERATORS.argument(token);
+    const generator = TOKEN_GENERATORS.argument(token);
+    this.pushGenerator(generator);
     this.loopGenerate();
   }
 
   private generateOutputs(token: Tokens) {
-    this.generator = TOKEN_GENERATORS.result(token);
+    const generator = TOKEN_GENERATORS.result(token);
+    this.pushGenerator(generator);
     this.loopGenerate();
   }
 
@@ -196,14 +222,11 @@ class TsTypeGenerator {
   }
 
   private pushGenerator(generator: Generator<string | Tokens>) {
-    this.generators.push(this.generator);
-    this.generator = generator;
+    this.generators.push(generator);
   }
 
   private popGenerator() {
-    this.generator = this.generators.pop()!;
-    return this.generator;
+    const generator = this.generators.pop();
+    return generator;
   }
 }
-
-type k = Exclude<TokensKinds, EndofTokens["kind"]>;

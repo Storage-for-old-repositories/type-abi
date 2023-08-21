@@ -2,6 +2,7 @@ import { AbiParserFunc, ParsedFuncArtifact } from "./abi-parser-func/";
 import { ABI } from "./shared.types";
 
 import abi from "../.abi/tests_contracts_ForTyping_sol_ForTyping.json";
+import { TsTypeGenerator } from "./ts-gen-func";
 
 type CompilerObject = { abi: ABI | ABI[] };
 export type ParserInput = ABI | ABI[] | CompilerObject;
@@ -44,4 +45,11 @@ class AbiParser {
 
 const parsed = AbiParser.parse(abi as any as ABI);
 const json = [...parsed.funcs.values()];
-console.log(JSON.stringify(json));
+
+const generator = new TsTypeGenerator();
+const parsedSignature = json[0]!;
+generator.setArtifact(parsedSignature);
+
+const type = generator.generate();
+console.log(JSON.stringify(parsedSignature, undefined, 2));
+console.log(type);
