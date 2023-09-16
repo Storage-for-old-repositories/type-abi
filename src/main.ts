@@ -47,8 +47,15 @@ const parsed = AbiParser.parse(abi as any as ABI);
 const json = [...parsed.funcs.values()];
 
 const generator = new TsTypeGenerator();
-const parsedSignature = json[0]!;
+const parsedSignature = json[3]!;
 generator.setArtifact(parsedSignature);
+generator.setConfig({
+  emitMetaInfoType: false,
+  replaceTuplesOnStruct: true,
+  verbose: true,
+})
+
+console.log(parsedSignature)
 
 const type = generator.generate();
 console.log(JSON.stringify(parsedSignature, undefined, 2));

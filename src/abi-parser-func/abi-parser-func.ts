@@ -1,10 +1,10 @@
-import { ABI, ABIFragment } from "../shared.types";
-import {
+import type { ABI, ABIFragment } from "../shared.types";
+import type {
   ParsedFuncArtifact,
   ParsedArtifactInput,
   ParsedArtifactOutput,
 } from "./interface.types";
-import {
+import type {
   ByteSizeofSet,
   IntSizeofSet,
   StructToken,

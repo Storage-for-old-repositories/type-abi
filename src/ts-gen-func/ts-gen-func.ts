@@ -1,139 +1,30 @@
 import { StringBuilder } from "../utility/string/string-builder";
-import {
-  ArrayConstToken,
-  ArrayToken,
-  EndofTokens,
-  ParsedFuncArtifact,
-  StructToken,
-  Tokens,
-  TupleToken,
-} from "../abi-parser-func";
-
-const buildAliasType = (type: string) => (token: EndofTokens) => {
-  return `[${type}, "${token.kind}"][0]`;
-};
-
-const TYPE_ALIAS: {
-  [Key in EndofTokens["kind"]]:
-    | string
-    | ((token: Extract<EndofTokens, { kind: Key }>) => string);
-} = {
-  string: "string",
-  address: buildAliasType("string"),
-  bool: buildAliasType("boolean"),
-  bytes: buildAliasType("string"),
-  enum: (token) => {
-    return `[bigint, "enum", "${token.enumName}"][0]`;
-  },
-  bytesLimit: (token) => {
-    return `[string, "bytes", ${token.sizeof}][0]`;
-  },
-  int: (token) => {
-    return `[bigint, "int", ${token.sizeof}][0]`;
-  },
-  uint: (token) => {
-    return `[bigint, "uint", ${token.sizeof}][0]`;
-  },
-};
-
-const TOKEN_GENERATORS = {
-  alias: function* (token: EndofTokens) {
-    const alias = TYPE_ALIAS[token.kind]!;
-    if (typeof alias === "string") {
-      yield alias;
-      return;
-    }
-    const aliasCastType = alias as (t: typeof token) => string;
-    yield aliasCastType(token);
-  },
-  array: function* (token: ArrayToken) {
-    yield "Array<";
-    yield token.token;
-    yield ">";
-  },
-  arrayConst: function* (token: ArrayConstToken) {
-    yield "[Array<";
-    yield token.token;
-    yield `>, ${token.sizeof}][0]`;
-  },
-  struct: function* (token: StructToken): Generator<string | Tokens> {
-    yield "[{";
-
-    for (let i = 0; i < token.fields.length; ++i) {
-      const field = token.fields[i]!;
-      const name = field.name ?? `auto$field${i}`;
-
-      yield `["${name}"]: `;
-      yield field;
-      yield ",";
-    }
-
-    yield `}, "${token.structName}"][0]`;
-  },
-  tuple: function* (token: TupleToken): Generator<string | Tokens> {
-    yield "[";
-
-    yield token.tokens[0]!;
-    for (let i = 1; i < token.tokens.length; ++i) {
-      yield ",";
-      yield token.tokens[i]!;
-    }
-
-    yield `]`;
-  },
-  tupleStructMode: function* (token: TupleToken): Generator<string | Tokens> {
-    yield* TOKEN_GENERATORS.struct({
-      kind: "struct",
-      structName: "<AutoTuple>",
-      fields: token.tokens,
-      containerName: token.containerName,
-      name: token.name,
-    });
-  },
-  argument: function* (token: Tokens) {
-    yield "(";
-    if (token.kind === "tuple") {
-      const firstToken = token.tokens[0]!;
-      const name = firstToken.name ?? `auto$field0`;
-      yield `${name}: `;
-      yield firstToken;
-
-      for (let i = 1; i < token.tokens.length; ++i) {
-        const field = token.tokens[i]!;
-        const name = field.name ?? `auto$field${i}`;
-
-        yield ",";
-        yield `${name}: `;
-        yield field;
-      }
-    }
-    const name = token.name ?? "auto$field";
-    yield `${name}: `;
-    yield token;
-    yield "):";
-  },
-  result: function* (token: Tokens) {
-    yield "Promise<";
-    yield token;
-    yield ">";
-  },
-};
+import { ParsedFuncArtifact, Tokens } from "../abi-parser-func";
+import { GeneratorsForTokens } from "./generators-for-tokens";
+import { SharedMemory } from "./shared-memory";
 
 const DEFAULT_CONFIG: Readonly<TsTypeGenerationConfig> = {
   verbose: false,
+  emitMetaInfoType: true,
+  replaceTuplesOnStruct: false,
 };
 
 export interface TsTypeGenerationConfig {
   verbose: boolean;
+  emitMetaInfoType: boolean;
+  replaceTuplesOnStruct: boolean;
 }
 
 export class TsTypeGenerator {
   private artifact!: ParsedFuncArtifact;
-  private config!: TsTypeGenerationConfig;
 
   private generators: Generator<string | Tokens>[] = [];
 
+  private sharedMemory = new SharedMemory();
+
   private sBuilder = new StringBuilder();
+
+  private callerToken = new GeneratorsForTokens(this.sharedMemory);
 
   public setArtifact(artifact: ParsedFuncArtifact) {
     this.artifact = artifact;
@@ -150,13 +41,13 @@ export class TsTypeGenerator {
   }
 
   public setConfig(config?: Partial<TsTypeGenerationConfig>) {
-    this.config = { ...DEFAULT_CONFIG };
+    this.sharedMemory.config = { ...DEFAULT_CONFIG };
     if (!config) {
       return;
     }
     for (const [key, value] of Object.entries(config)) {
       const _tcKey = key as keyof TsTypeGenerationConfig;
-      this.config[_tcKey] = (value as any) ?? config[_tcKey];
+      this.sharedMemory.config[_tcKey] = (value as any) ?? config[_tcKey];
     }
   }
 
@@ -179,13 +70,13 @@ export class TsTypeGenerator {
   }
 
   private generateInputs(token: Tokens) {
-    const generator = TOKEN_GENERATORS.argument(token);
+    const generator = this.callerToken.argument(token);
     this.pushGenerator(generator);
     this.loopGenerate();
   }
 
   private generateOutputs(token: Tokens) {
-    const generator = TOKEN_GENERATORS.result(token);
+    const generator = this.callerToken.result(token);
     this.pushGenerator(generator);
     this.loopGenerate();
   }
@@ -208,15 +99,15 @@ export class TsTypeGenerator {
       }
 
       if (value.kind === "tuple") {
-        this.pushGenerator(TOKEN_GENERATORS.tuple(value));
+        this.pushGenerator(this.callerToken.tuple(value));
       } else if (value.kind === "array") {
-        this.pushGenerator(TOKEN_GENERATORS.array(value));
+        this.pushGenerator(this.callerToken.array(value));
       } else if (value.kind === "arrayConst") {
-        this.pushGenerator(TOKEN_GENERATORS.arrayConst(value));
+        this.pushGenerator(this.callerToken.arrayConst(value));
       } else if (value.kind === "struct") {
-        this.pushGenerator(TOKEN_GENERATORS.struct(value));
+        this.pushGenerator(this.callerToken.struct(value));
       } else {
-        this.pushGenerator(TOKEN_GENERATORS.alias(value));
+        this.pushGenerator(this.callerToken.alias(value));
       }
     }
   }
